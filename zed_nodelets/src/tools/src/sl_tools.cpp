@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////
 //
-// Copyright (c) 2020, STEREOLABS.
+// Copyright (c) 2023, STEREOLABS.
 //
 // All rights reserved.
 //
@@ -30,105 +30,6 @@
 
 namespace sl_tools
 {
-int checkCameraReady(unsigned int serial_number)
-{
-  int id = -1;
-  auto f = sl::Camera::getDeviceList();
-
-  for (auto& it : f)
-    if (it.serial_number == serial_number && it.camera_state == sl::CAMERA_STATE::AVAILABLE)
-    {
-      id = it.id;
-    }
-
-  return id;
-}
-
-sl::DeviceProperties getZEDFromSN(unsigned int serial_number)
-{
-  sl::DeviceProperties prop;
-  auto f = sl::Camera::getDeviceList();
-
-  for (auto& it : f)
-  {
-    if (it.serial_number == serial_number && it.camera_state == sl::CAMERA_STATE::AVAILABLE)
-    {
-      prop = it;
-    }
-  }
-
-  return prop;
-}
-
-std::vector<float> convertRodrigues(sl::float3 r)
-{
-  float theta = sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
-
-  std::vector<float> R = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
-
-  if (theta < DBL_EPSILON)
-  {
-    return R;
-  }
-  else
-  {
-    float c = cos(theta);
-    float s = sin(theta);
-    float c1 = 1.f - c;
-    float itheta = theta ? 1.f / theta : 0.f;
-
-    r *= itheta;
-
-    std::vector<float> rrt = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
-
-    float* p = rrt.data();
-    p[0] = r.x * r.x;
-    p[1] = r.x * r.y;
-    p[2] = r.x * r.z;
-    p[3] = r.x * r.y;
-    p[4] = r.y * r.y;
-    p[5] = r.y * r.z;
-    p[6] = r.x * r.z;
-    p[7] = r.y * r.z;
-    p[8] = r.z * r.z;
-
-    std::vector<float> r_x = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
-    p = r_x.data();
-    p[0] = 0;
-    p[1] = -r.z;
-    p[2] = r.y;
-    p[3] = r.z;
-    p[4] = 0;
-    p[5] = -r.x;
-    p[6] = -r.y;
-    p[7] = r.x;
-    p[8] = 0;
-
-    // R = cos(theta)*I + (1 - cos(theta))*r*rT + sin(theta)*[r_x]
-
-    sl::Matrix3f eye;
-    eye.setIdentity();
-
-    sl::Matrix3f sl_R(R.data());
-    sl::Matrix3f sl_rrt(rrt.data());
-    sl::Matrix3f sl_r_x(r_x.data());
-
-    sl_R = eye * c + sl_rrt * c1 + sl_r_x * s;
-
-    R[0] = sl_R.r00;
-    R[1] = sl_R.r01;
-    R[2] = sl_R.r02;
-    R[3] = sl_R.r10;
-    R[4] = sl_R.r11;
-    R[5] = sl_R.r12;
-    R[6] = sl_R.r20;
-    R[7] = sl_R.r21;
-    R[8] = sl_R.r22;
-  }
-
-  return R;
-}
-
 bool file_exist(const std::string& name)
 {
   struct stat buffer;
@@ -138,11 +39,10 @@ bool file_exist(const std::string& name)
 namespace fs = std::experimental::filesystem;
 std::string resolveFilePath(std::string file_path)
 {
-  if(file_path.empty())
+  if (file_path.empty())
   {
     return file_path;
   }
-
 
   std::string abs_path = file_path;
   if (file_path[0] == '~')
@@ -173,7 +73,7 @@ std::string resolveFilePath(std::string file_path)
       return std::string();
     }
   }
-  else if(file_path[0] != '/')
+  else if (file_path[0] != '/')
   {
     fs::path current_path = fs::current_path();
     abs_path = current_path.string() + "/" + file_path;
@@ -218,6 +118,50 @@ ros::Time slTime2Ros(sl::Timestamp t)
   uint32_t sec = static_cast<uint32_t>(t.getNanoseconds() / 1000000000);
   uint32_t nsec = static_cast<uint32_t>(t.getNanoseconds() % 1000000000);
   return ros::Time(sec, nsec);
+}
+
+bool isZED(sl::MODEL camModel)
+{
+  if (camModel == sl::MODEL::ZED)
+  {
+    return true;
+  }
+  return false;
+}
+
+bool isZEDM(sl::MODEL camModel)
+{
+  if (camModel == sl::MODEL::ZED_M)
+  {
+    return true;
+  }
+  return false;
+}
+
+bool isZED2OrZED2i(sl::MODEL camModel)
+{
+  if (camModel == sl::MODEL::ZED2)
+  {
+    return true;
+  }
+  if (camModel == sl::MODEL::ZED2i)
+  {
+    return true;
+  }
+  return false;
+}
+
+bool isZEDX(sl::MODEL camModel)
+{
+  if (camModel == sl::MODEL::ZED_X)
+  {
+    return true;
+  }
+  if (camModel == sl::MODEL::ZED_XM)
+  {
+    return true;
+  }
+  return false;
 }
 
 void imageToROSmsg(sensor_msgs::ImagePtr imgMsgPtr, sl::Mat img, std::string frameId, ros::Time t)
@@ -410,6 +354,154 @@ std::vector<std::string> split_string(const std::string& s, char seperator)
 
   output.push_back(s.substr(prev_pos, pos - prev_pos));
   return output;
+}
+
+inline bool contains(std::vector<sl::float2>& poly, sl::float2 test)
+{
+  int i, j;
+  bool c = false;
+  const int nvert = poly.size();
+  for (i = 0, j = nvert - 1; i < nvert; j = i++)
+  {
+    if (((poly[i].y > test.y) != (poly[j].y > test.y)) &&
+        (test.x < (poly[j].x - poly[i].x) * (test.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+    {
+      c = !c;
+    }
+  }
+  return c;
+}
+
+bool generateROI(const std::vector<sl::float2>& poly, sl::Mat& out_roi)
+{
+  if (poly.size() < 3)
+  {
+    out_roi = sl::Mat();
+    return false;
+  }
+
+  // Set each pixel to valid
+  // std::cerr << "Setting ROI mask to full valid" << std::endl;
+  out_roi.setTo<sl::uchar1>(255, sl::MEM::CPU);
+
+  // ----> De-normalize coordinates
+  size_t w = out_roi.getWidth();
+  size_t h = out_roi.getHeight();
+
+  // std::cerr << "De-normalize coordinates" << std::endl;
+  // std::cerr << "Image resolution: " << w << "x" << h << std::endl;
+  std::vector<sl::float2> poly_img;
+  size_t idx = 0;
+  for (auto& it : poly)
+  {
+    sl::float2 pt;
+    pt.x = it.x * w;
+    pt.y = it.y * h;
+
+    if (pt.x >= w)
+    {
+      pt.x = (w - 1);
+    }
+    if (pt.y >= h)
+    {
+      pt.y = (h - 1);
+    }
+
+    poly_img.push_back(pt);
+
+    ++idx;
+  }
+  // <---- De-normalize coordinates
+
+  // ----> Unset ROI pixels outside the polygon
+  // std::cerr << "Unset ROI pixels outside the polygon" << std::endl;
+  // std::cerr << "Set mask" << std::endl;
+  for (int v = 0; v < h; v++)
+  {
+    for (int u = 0; u < w; u++)
+    {
+      if (!contains(poly_img, sl::float2(u, v)))
+      {
+        out_roi.setValue<sl::uchar1>(u, v, 0, sl::MEM::CPU);
+      }
+    }
+  }
+  // std::cerr << "Mask ready" << std::endl;
+  // std::cerr << "ROI resolution: " << w << "x" << h << std::endl;
+  // <---- Unset ROI pixels outside the polygon
+
+  return true;
+}
+
+std::vector<std::vector<float>> parseStringVector(const std::string& input, std::string& error_return)
+{
+  std::vector<std::vector<float>> result;
+
+  std::stringstream input_ss(input);
+  int depth = 0;
+  std::vector<float> current_vector;
+  while (!!input_ss && !input_ss.eof())
+  {
+    switch (input_ss.peek())
+    {
+      case EOF:
+        break;
+      case '[':
+        depth++;
+        if (depth > 2)
+        {
+          error_return = "Array depth greater than 2";
+          return result;
+        }
+        input_ss.get();
+        current_vector.clear();
+        break;
+      case ']':
+        depth--;
+        if (depth < 0)
+        {
+          error_return = "More close ] than open [";
+          return result;
+        }
+        input_ss.get();
+        if (depth == 1)
+        {
+          result.push_back(current_vector);
+        }
+        break;
+      case ',':
+      case ' ':
+      case '\t':
+        input_ss.get();
+        break;
+      default:  // All other characters should be part of the numbers.
+        if (depth != 2)
+        {
+          std::stringstream err_ss;
+          err_ss << "Numbers at depth other than 2. Char was '" << char(input_ss.peek()) << "'.";
+          error_return = err_ss.str();
+          return result;
+        }
+        float value;
+        input_ss >> value;
+        if (!!input_ss)
+        {
+          current_vector.push_back(value);
+        }
+        break;
+    }
+  }
+
+  if (depth != 0)
+  {
+    error_return = "Unterminated vector string.";
+  }
+  else
+  {
+    error_return = "";
+  }
+
+  return result;
 }
 
 CSmartMean::CSmartMean(int winSize)
